@@ -1,5 +1,5 @@
-<!-- Books dataset from: https://www.kaggle.com/datasets/dylanjcastillo/7k-books-with-metadata?resource=download -->
-<!-- React frontend: // -->
+|| Books dataset from: https://www.kaggle.com/datasets/dylanjcastillo/7k-books-with-metadata?resource=download ||
+|| React frontend: https://github.com/Thnderbread/library-project-frontend ||
 
 The backend for the node.js library system project. A simple system that allows users to search, waitlist, and checkout books from a library of about 50 titles. Built with node.js and mysql.
 
