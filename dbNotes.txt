@@ -1,0 +1,473 @@
+{{This file contains all the schemas and triggers used to create the same mysql database used in this project.}}
+
+Table 1: users
+CREATE TABLE users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(255) NOT NULL UNIQUE,
+  password VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  checkouts INT DEFAULT 0,
+  waitlists INT DEFAULT 0,
+  CHECK (checkouts >= 0),
+  CHECK (waitlists >= 0),
+  refresh_token_id VARCHAR(255)
+);
+
+Table 2: books
+CREATE TABLE books (
+  ISBN13 VARCHAR(20) NOT NULL UNIQUE PRIMARY KEY,
+  ISBN10 VARCHAR(20),
+  image_url VARCHAR(255),
+  rating FLOAT,
+  title VARCHAR(255) NOT NULL,
+  author VARCHAR(255) NOT NULL,
+  inventory_quantity INT NOT NULL,
+  published_year YEAR NOT NULL,
+  description TEXT
+);
+
+Table 3: book_checkout_entries
+CREATE TABLE book_checkout_entries (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  checkout_date DATE NOT NULL,
+  book_isbn13 VARCHAR(20) NOT NULL,
+  user_id INT NOT NULL,
+  FOREIGN KEY (book_isbn13) REFERENCES books (ISBN13),
+  FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
+Table 4: book_checkouts_count
+CREATE TABLE book_checkouts_count (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  book_isbn13 VARCHAR(20) NOT NULL,
+  checkout_count INT,
+  checkout_limit INT,
+  FOREIGN KEY (checkout_limit) REFERENCES books (inventory_quantity),
+  FOREIGN KEY (book_isbn13) REFERENCES books (ISBN13),
+  UNIQUE KEY (book_isbn13)
+);
+
+Table 5: book_checkout_history
+CREATE TABLE book_checkout_history (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  checkout_date DATETIME NOT NULL,
+  checkin_date DATETIME,
+  book_isbn13 VARCHAR(20) NOT NULL,
+  user_id INT NOT NULL,
+  FOREIGN KEY (book_isbn13) REFERENCES books (ISBN13),
+  FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
+Table 6: book_waitlist_entries
+CREATE TABLE book_waitlist_entries (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  book_isbn13 VARCHAR(20) NOT NULL,
+  user_id INT NOT NULL,
+  timestamp DATETIME NOT NULL,
+  FOREIGN KEY (book_isbn13) REFERENCES books (ISBN13),
+  FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
+Table 7: book_waitlists_count
+CREATE TABLE book_waitlists_count (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  book_isbn13 VARCHAR(20) NOT NULL,
+  waitlist_count INT,
+  FOREIGN KEY (book_isbn13) REFERENCES books (ISBN13),
+  UNIQUE KEY (book_isbn13)
+);
+
+Table 8: book_waitlist_history
+CREATE TABLE book_waitlist_history (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  book_isbn13 VARCHAR(20) NOT NULL,
+  user_id INT NOT NULL,
+  timestamp DATETIME NOT NULL,
+  FOREIGN KEY (book_isbn13) REFERENCES books (ISBN13),
+  FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
+Table 9: tokens
+CREATE TABLE tokens (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id INT NOT NULL,
+    payload VARCHAR(255) NOT NULL,
+    token_type VARCHAR(255) NOT NULL,
+    token_created_date DATETIME NOT NULL,
+    token_expired_date DATETIME NOT NULL,
+    expired BOOLEAN NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+  );
+
+=======================================================
+UPDATE HERE
+1 (ENFORCES A LIMIT ON THE AMOUNT OF WAITLISTS THAT CAN OCCUR ON A BOOK. (5 waitlists per book), Change to 10)
+DELIMITER //
+CREATE TRIGGER enforce_book_waitlist_limit
+BEFORE INSERT ON book_waitlist_entries
+FOR EACH ROW
+BEGIN
+    DECLARE current_count INT;
+    SELECT waitlist_count INTO current_count FROM book_waitlists_count WHERE book_isbn13 = NEW.book_isbn13;
+
+    IF current_count >= 10 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = "Waitlist limit reached for this book.";
+    END IF;
+END;
+//
+DELIMITER ;
+=======================================================
+2 (DECREMENTS WAITLIST COUNT AFTER AN ENTRY IS DELETED FROM WAITLIST ENTRIES.)
+>> Will this work? the id column could be incorrectly referring to the main id column instead of book_id.
+DELIMITER //
+CREATE TRIGGER decrement_waitlist_count_table
+AFTER DELETE ON book_waitlist_entries
+FOR EACH ROW
+BEGIN
+
+UPDATE book_waitlists_count
+SET waitlist_count = waitlist_count - 1
+WHERE book_isbn13 = OLD.book_isbn13;
+END;
+//
+DELIMITER ;
+========================================================
+ 3 (ENSURES A USER DOES NOT CHECKOUT BEYOND THEIR LIMIT. (3 checkouts))
+DELIMITER //
+CREATE TRIGGER enforce_user_checkout_limit
+BEFORE INSERT ON book_checkout_entries
+FOR EACH ROW
+BEGIN
+  DECLARE current_count INT;
+  SELECT checkouts INTO current_count FROM users WHERE users.id = NEW.user_id;
+
+  IF current_count + 1 > 3 THEN
+  SIGNAL SQLSTATE '45100'
+  SET MESSAGE_TEXT = "Checkout limit reached for this user.";
+  END IF;
+END;
+//
+DELIMITER ;
+(TEST: INSERT INTO book_checkout_entries (checkout_date, book_isbn13, user_id) VALUES (NOW(), 19, 1001))
+=========================================================
+4 (ENSURES A BOOK CANNOT BE CHECKED OUT BEYOND ITS QUANTITY.)
+DELIMITER //
+CREATE TRIGGER enforce_book_checkout_limit
+BEFORE INSERT ON book_checkout_entries
+FOR EACH ROW
+BEGIN
+
+DECLARE checkout_count INT;
+DECLARE checkout_limit INT;
+
+SELECT bcc.checkout_count, bcc.checkout_limit 
+INTO checkout_count, checkout_limit 
+FROM book_checkouts_count bcc 
+WHERE bcc.book_isbn13 = NEW.book_isbn13;
+
+IF checkout_count + 1 > checkout_limit THEN
+SIGNAL SQLSTATE '45000'
+SET MESSAGE_TEXT = 'Checkout limit reached for this book.';
+END IF;
+END;
+//
+DELIMITER ;
+# DECLARE checkout_limit INT;
+# DECLARE checkout_count INT;
+
+# SELECT quantity INTO checkout_limit FROM books WHERE id = NEW.book_id;
+# SELECT checkout_count INTO checkout_count FROM book_checkouts_count WHERE book_id = NEW.book_id;
+=========================================================
+5 (DECREMENTS A BOOK'S CHECKOUT COUNT AFTER DELETION FROM ENTRIES TABLE.)
+DELIMITER //
+CREATE TRIGGER decrement_checkouts_count_table
+AFTER DELETE ON book_checkout_entries
+FOR EACH ROW
+BEGIN
+
+UPDATE book_checkouts_count
+SET checkout_count = checkout_count - 1
+WHERE book_isbn13 = OLD.book_isbn13;
+END;
+//
+DELIMITER ;
+=========================================================
+6 (INCREMENTS A BOOK'S CHECKOUT COUNT AFTER INSERTION ON ENTRIES TABLE.)
+DELIMITER //
+CREATE TRIGGER increment_checkouts_count_table
+AFTER INSERT ON book_checkout_entries
+FOR EACH ROW
+BEGIN
+
+UPDATE book_checkouts_count
+SET checkout_count = checkout_count + 1
+WHERE book_isbn13 = NEW.book_isbn13;
+END;
+//
+DELIMITER ;
+=========================================================
+7 (TRIGGER TO REMOVE REFRESH TOKEN ID FROM USERS ONCE IT EXPIRES.)
+DELIMITER //
+CREATE TRIGGER remove_refresh_token_id
+AFTER UPDATE ON tokens
+FOR EACH ROW
+BEGIN
+
+IF NEW.token_type = 'refresh' and NEW.expired = 1 THEN
+  UPDATE users
+  SET refresh_token_id = NULL 
+  WHERE users.id = NEW.user_id;
+  END IF;
+END;
+//
+DELIMITER ;
+=========================================================
+UPDATE HERE
+8 (ENSURES USER DOES NOT WAITLIST BEYOND THEIR LIMIT (10 book limit))
+DELIMITER //
+CREATE TRIGGER enforce_user_waitlist_limit
+BEFORE INSERT ON book_waitlist_entries
+FOR EACH ROW
+BEGIN
+ DECLARE current_count INT;
+ SELECT waitlists INTO current_count FROM users WHERE id = NEW.user_id;
+
+ IF current_count = 10 THEN
+   SIGNAL SQLSTATE '45100'
+   SET MESSAGE_TEXT = "Waitlist limit reached for this user.";
+ ELSE 
+   UPDATE users
+   SET checkouts = checkouts + 1
+   WHERE id = NEW.user_id;
+ END IF;
+END;
+//
+DELIMITER ;
+=========================================================
+9 (INCREMENTS USER'S WAITLIST COUNT)
+DELIMITER //
+CREATE TRIGGER increment_user_waitlist_count
+AFTER INSERT ON book_waitlist_entries
+FOR EACH ROW
+BEGIN
+  UPDATE users
+  SET waitlists = waitlists + 1
+  WHERE id = NEW.user_id;
+END
+//
+DELIMITER ;
+=========================================================
+10 (DECREMENTS USER'S WAITLIST COUNT)
+DELIMITER //
+CREATE TRIGGER decrement_user_waitlist_count
+AFTER DELETE ON book_waitlist_entries
+FOR EACH ROW
+BEGIN
+  UPDATE users
+  SET waitlists = waitlists - 1
+  WHERE id = OLD.user_id;
+END
+//
+DELIMITER ;
+=========================================================
+11 (INCREMENTS A USER'S CHECKOUTS COUNT)
+DELIMITER //
+CREATE TRIGGER increment_user_checkouts_count
+AFTER INSERT ON book_checkout_entries
+FOR EACH ROW
+BEGIN
+  UPDATE users
+  SET checkouts = checkouts + 1
+  WHERE id = NEW.user_id;
+END;
+//
+DELIMITER ;
+=========================================================
+12 (DECREMENTS A USER'S CHECKOUTS COUNT)
+DELIMITER // 
+CREATE TRIGGER decrement_user_checkouts_count
+AFTER DELETE ON book_checkout_entries
+FOR EACH ROW
+BEGIN
+
+UPDATE users 
+SET checkouts = checkouts - 1
+WHERE id = OLD.user_id;
+END;
+//
+DELIMITER ;
+=========================================================
+13 (INCREMENTS WAITLIST COUNT AFTER AN ENTRY IS ADDED TO WAITLIST ENTRIES.)
+>> Will this work? the id column could be incorrectly referring to the main id column instead of book_isbn13.
+DELIMITER //
+ CREATE TRIGGER increment_waitlist_count_table
+ AFTER INSERT ON book_waitlist_entries
+ FOR EACH ROW
+ BEGIN
+
+ UPDATE book_waitlists_count
+ SET waitlist_count = waitlist_count + 1
+ WHERE book_isbn13 = NEW.book_isbn13;
+ END;
+ //
+ DELIMITER ;
+========================================================
+14 (CREATES AN ENTRY IN BOOK_WAITLISTS_COUNT WHEN A BOOK IS ADDED TO DB.)
+DELIMITER //
+CREATE TRIGGER add_book_to_waitlists_count_table
+  AFTER INSERT ON books
+  FOR EACH ROW
+  BEGIN
+
+  INSERT INTO book_waitlists_count (book_isbn13, waitlist_count)
+  VALUES (NEW.isbn13, 0);
+  END;
+//
+DELIMITER ;
+========================================================
+15 (DELETES AN ENTRY IN BOOK_WAITLISTS_COUNT WHEN A BOOK IS REMOVED FROM DB.)
+DELIMITER //
+CREATE TRIGGER remove_book_from_waitlists_count_table
+  BEFORE DELETE ON books
+  FOR EACH ROW
+  BEGIN
+  
+  DELETE FROM book_waitlists_count WHERE book_isbn13 = OLD.isbn13;
+  END;
+//
+DELIMITER ;
+========================================================
+16 (CREATES AN ENTRY IN BOOK_CHECKOUTS_COUNT WHEN A BOOK IS ADDED TO DB.)
+DELIMITER //
+CREATE TRIGGER add_book_to_checkouts_count_table
+  AFTER INSERT ON books
+  FOR EACH ROW
+  BEGIN
+
+  INSERT INTO book_checkouts_count (book_isbn13, checkout_count, checkout_limit)
+  VALUES (NEW.isbn13, 0, NEW.inventory_quantity);
+  END;
+//
+DELIMITER ;
+========================================================
+17 (DELETES AN ENTRY IN BOOK_CHECKOUTS_COUNT WHEN A BOOK IS REMOVED FROM DB.)
+DELIMITER //
+CREATE TRIGGER remove_book_from_checkouts_count_table
+  BEFORE DELETE ON books
+  FOR EACH ROW
+  BEGIN
+  
+  DELETE FROM book_checkouts_count WHERE book_isbn13 = OLD.isbn13;
+  END;
+//
+DELIMITER ;
+========================================================
+18 (REMOVES TOKENS FROM TABLE BEFORE USER IS DELETED.)
+DELIMITER //
+CREATE TRIGGER remove_deleted_user_tokens
+  BEFORE DELETE ON users
+  FOR EACH ROW
+  BEGIN
+
+  DELETE FROM tokens WHERE user_id = OLD.id;
+  END;
+//
+DELIMITER ;
+========================================================
+19 (REMOVES ITEMS FROM CHECKOUT ENTRIES TABLE BEFORE USER IS DELETED.)
+DELIMITER //
+CREATE TRIGGER remove_deleted_user_checkouts
+  BEFORE DELETE ON users
+  FOR EACH ROW
+  BEGIN
+
+  DELETE FROM book_checkout_entries WHERE user_id = OLD.id;
+  END;
+//
+DELIMITER ;
+========================================================
+20 (REMOVES ITEMS FROM WAITLIST ENTRIES TABLE BEFORE USER IS DELETED.)
+DELIMITER //
+CREATE TRIGGER remove_deleted_user_waitlists
+  BEFORE DELETE ON users
+  FOR EACH ROW
+  BEGIN
+
+  DELETE FROM book_waitlist_entries WHERE user_id = OLD.id;
+  END;
+//
+DELIMITER ;
+========================================================
+{DEPRECATED}
+(INCREMENTS WAITLIST COUNT AFTER AN ENTRY IS INSERTED INTO WAITLIST ENTRIES.)
+DELIMITER //
+CREATE TRIGGER increment_waitlist_count_table
+ AFTER INSERT ON book_waitlist_entries
+ FOR EACH ROW
+ BEGIN
+
+ >> since we probably will get rid of waitlisted / waitlist_status,
+ >> we can add application logic and check for the existence of book_isbn13 in
+ >> waitlist_count table. If it doesn't exist, use separate application statement
+ >> to create it. If so, continue as normal. Let that run before regular insert statement.
+ IF NEW.waitlisted = 1 THEN
+ UPDATE book_waitlists_count
+ SET waitlist_count = waitlist_count + 1
+ WHERE id = NEW.book_isbn13;
+ END IF;
+ END;
+ //
+ DELIMITER ;
+========================================================
+========================================================
+ {DEPRECATED} 
+ (ADJUSTS THE WAITLIST STATUS OF A BOOK AFTER ITS INCREMENTED OR DECREMENTED.)
+
+ CREATE TRIGGER adjust_waitlist_status
+ AFTER UPDATE ON book_waitlists_count
+ FOR EACH ROW
+ BEGIN
+     DECLARE current_count INT;
+     DECLARE current_status BOOLEAN;
+    >> Issue here: waitlist status does not exist. But is it necessary???
+     SELECT waitlist_count INTO current_count FROM book_waitlists_count WHERE book_isbn13 = NEW.book_isbn13;
+     SELECT waitlist_status INTO current_status FROM book_waitlist_entries WHERE book_isbn13 = NEW.book_id;
+ 
+     IF current_status = 1 AND current_count = 0 THEN
+         UPDATE book_waitlist_entries
+         SET waitlist_status = 0
+         WHERE book_id = NEW.book_id;
+     ELSEIF current_status = 0 AND current_count > 0 THEN
+         UPDATE book_waitlist_entries
+         SET waitlist_status = 1
+         WHERE book_id = NEW.book_id;
+     END IF;
+ END;
+ //
+=========================================================
+=========================================================
+✅✅> Should increment and decrement book_checkouts_count 
+when a book is added or removed (2)
+
+✅✅> Should increment and decrement users when a book is checked out
+and checked in (added or removed from book_checkout_entries) (2)
+
+✅✅> Should increment and decrement book_waitlist_count 
+when a book is added or removed (2)
+
+✅✅> Should increment and decrement users when a book is waitlisted
+and unlisted (added or removed from book_waitlist_entries) (2)
+
+✅> Should remove refresh_token_id from users when refresh token is
+deleted from tokens (1)
+
+✅> Should enforce a limit on user's checkouts (1)
+
+✅> Should enforce a limit on user's waitlists (1)
+
+✅> Should enforce a limit on a overall checkouts
+(Checks qty in books table) (1)
+
+✅> Should enforce a limit on overall waitlists 
+(Checks count in book_waitlist_count table) (1)

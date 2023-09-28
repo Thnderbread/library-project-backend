@@ -1,0 +1,19 @@
+.env
+/node_modules
+/logs
+
+# misc
+/.VSCodeCounter
+/.vscode
+
+# some stuff I made for testing other stuff
+/db
+/notes
+demo_db.js
+copydump.txt
+copydump.sql
+email_practice.js
+
+# venv
+__pycache__
+/scripts/scripts
