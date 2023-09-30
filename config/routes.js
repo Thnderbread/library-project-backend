@@ -1,3 +1,4 @@
+ // Using this to ensure unsupported routes are not logged
 routes = [
     '/auth',
     '/forgot',
