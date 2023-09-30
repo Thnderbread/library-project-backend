@@ -1,0 +1,51 @@
+{
+    "version": 2,
+    "builds": [
+        {
+            "src": "server.js",
+            "use": "@now/node"
+        }
+    ],
+    "routes": [
+        {
+            "src": "/(.*)",
+            "dest": "server.js"
+        },
+        {
+            "src": "/auth",
+            "dest": "controllers/authController.js"
+        },
+        {
+            "src": "/logout",
+            "dest": "/controllers/logoutController.js"
+        },
+        {
+            "src": "/refresh",
+            "dest": "controllers/refreshController.js"
+        },
+        {
+            "src": "/register",
+            "dest": "controllers/registerController.js"
+        },
+        {
+            "src": "/books/waitlist",
+            "dest": "controllers/booksController.js"
+        },
+        {
+            "src": "/books/checkout",
+            "dest": "controllers/booksController.js"
+        },
+        {
+            "src": "books/search",
+            "dest": "controllers/booksController.js"
+        },
+        {
+            "src": "/users/waitlist",
+            "dest": "controllers/userWaitlistController.js"
+        },
+        {
+            "src": "/users/checkouts",
+            "dest": "controllers/userCheckoutsController.js"
+        }
+    ]
+}
