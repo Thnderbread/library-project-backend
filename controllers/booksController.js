@@ -59,7 +59,6 @@ async function waitlistBook(req, res) {
             [bookISBN, userId]
         );
 
-        // FIXME: What will be the sqlstate triggered when waitlist limit is reached? 
     } catch (error) {
         if (error.sqlState == 45000) { // too many people are waiting for this book.
             return res.status(409).json({ 'error': 'Waitlist limit reached for this book.' });
@@ -358,7 +357,6 @@ async function searchBooks(req, res) {
     // on frontend, pages are one-indexed, make sure to subtract
     // one for proper results since db is 0 indexed
     const offset = page > 0 ? (Number(page) - 1) * 10 : 0
-    console.log(`Page number: ${page} , Offset: ${offset}`);
 
     // if no params were given, get a random assortment of books
     if (!title && !author && !year) {
