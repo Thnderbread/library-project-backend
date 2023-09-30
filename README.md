@@ -9,4 +9,6 @@ I may come back in the future and clean up some things / add some features. For 
 
 I also though about adding some extended functionality to the library system - e.g. an admin - user system, where an admin can add and remove books, or perform some actions for users.
 
+It would also be nice if you could actually *read* the books you checked out.
+
 For now though, I'm content with what I've built, as this is the first kind of full stack thing I've ever made. I know I fell short in a lot of areas, so I'd be happy to hear some feedback if you have any.
