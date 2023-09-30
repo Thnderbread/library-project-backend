@@ -3,6 +3,7 @@ const cors = require('cors');
 const cron = require('node-cron');
 const express = require('express');
 const app = express();
+const redis = require('./config/redis');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const verifyJWT = require('./middleware/verifyJWT');
